@@ -10,6 +10,53 @@
 #include <cstdlib>
 #include <vector>
 
+// P1 滚动压缩: 当"预算装不下更旧消息"且"距上次压缩新增消息足够多"时,
+// 取最早一批旧消息丢给模型生成摘要, 合并覆盖 conversations.summary 并裁剪原消息。
+static const int kCompressChunk = 40;
+static void tryCompaction(long long convId, long long lastMsgId) {
+    long long upto = 0;
+    std::string existing;
+    ConversationService::getSummaryEx(convId, existing, upto);
+    if (ConversationService::messagesSince(convId, upto) < AppConfig::get().summaryMinNewMessages) {
+        return;   // 新增量不够, 压缩节流
+    }
+    std::vector<MsgRow> oldest;
+    long long maxId = 0;
+    ConversationService::loadOldestMessages(convId, kCompressChunk, oldest, maxId);
+    if (oldest.empty()) return;
+
+    // 素材: 已有摘要 + 最早的一批旧消息
+    std::string ending = oldest[0].role + ": " + oldest[0].content;
+    for (size_t i = 1; i < oldest.size(); ++i)
+        ending += "\n" + oldest[i].role + ": " + oldest[i].content;
+
+    Json::Value req;
+    req["model"] = AppConfig::get().model;
+    req["stream"] = true;
+    Json::Value messages(Json::arrayValue);
+    Json::Value sys;
+    sys["role"] = "system";
+    sys["content"] = "你是对话历史归档器。综合【已有摘要】和【新增早期消息】，输出更新后的完整摘要（不超过800字，中文，"
+                     "保留关键任务/决定/代码主题；无新增内容时可基本保持原文）。只输出摘要文本。";
+    messages.append(sys);
+    Json::Value usr;
+    usr["role"] = "user";
+    usr["content"] = "【已有摘要】\n" + (existing.empty() ? std::string("(无)") : existing) +
+                     "\n\n【新增早期消息】\n" + ending;
+    messages.append(usr);
+    req["messages"] = messages;
+
+    std::string merged;
+    if (LlmGateway::summarize(req, merged) && !merged.empty()) {
+        if (merged.size() > 2000) merged = merged.substr(0, 2000);   // 摘要配额上限
+        ConversationService::setSummary(convId, merged, lastMsgId);
+        ConversationService::trimOldestMessages(convId, (int)oldest.size());
+        tprintf("[ChatHandler] compaction: %zu oldest msgs -> summary (%zu chars)\n",
+                oldest.size(), merged.size());
+        fflush(stdout);
+    }
+}
+
 void ChatHandler::handle(HttpContext& ctx) {
     // ---- 静态页面: 公开 ----
     if (ctx.method == "GET" &&
@@ -43,7 +90,12 @@ void ChatHandler::handle(HttpContext& ctx) {
         if (mid > 0) userMsgId = std::to_string(mid);
     }
 
-    // ---- 组装 OpenAI messages (system + history + user) ----
+    // ---- 预算: 窗口 - 输出预留 - 系统提示 - 本次提问 - 摘要配额 ----
+    int budget = AppConfig::get().usableHistoryTokens()
+                 - TokenCounter::estimateTokens(systemPrompt)
+                 - TokenCounter::estimateTokens(prompt);
+
+    // ---- 组装 OpenAI messages (system + [摘要] + history + user) ----
     Json::Value messages(Json::arrayValue);
     if (!systemPrompt.empty()) {
         Json::Value sysMsg;
@@ -51,16 +103,27 @@ void ChatHandler::handle(HttpContext& ctx) {
         sysMsg["content"] = systemPrompt;
         messages.append(sysMsg);
     }
+
+    // P1: 滚动摘要并入上下文 (占预算, 在 history 之前, 让模型先"记住"旧事)
+    std::string summaryText;
+    if (persist && ConversationService::getSummary(convId, summaryText) && !summaryText.empty()) {
+        int sumTok = TokenCounter::estimateTokens(summaryText) + 8;
+        if (sumTok < budget) {
+            budget -= sumTok;
+            Json::Value sm;
+            sm["role"] = "user";
+            sm["content"] = "【此前对话要点】\n" + summaryText;
+            messages.append(sm);
+        }
+    }
+
+    // ---- 历史: 前端显式传则用之, 否则按 token 预算从最新往最旧装 ----
+    bool hasOlder = false;
     Json::Value hist = req.get("history", Json::arrayValue);
     if (hist.isArray() && hist.size() > 0) {
         for (Json::ArrayIndex i = 0; i < hist.size(); ++i) messages.append(hist[i]);
     } else if (persist) {
-        // 预算分配: 窗口 - 输出预留 - 系统提示 - 本次提问 = 可装历史
-        int budget = AppConfig::get().usableHistoryTokens()
-                     - TokenCounter::estimateTokens(systemPrompt)
-                     - TokenCounter::estimateTokens(prompt);
         std::vector<MsgRow> hs;
-        bool hasOlder = false;
         ConversationService::loadHistoryByTokens(convId,
             userMsgId.empty() ? 0 : atoll(userMsgId.c_str()),
             budget, AppConfig::get().historyFetchLimit, hs, hasOlder);
@@ -70,9 +133,11 @@ void ChatHandler::handle(HttpContext& ctx) {
             m["content"] = h.content;
             messages.append(m);
         }
-        tprintf("[ChatHandler] db history loaded: %zu msgs (budget %d tok)\n", hs.size(), budget);
+        tprintf("[ChatHandler] db history loaded: %zu msgs (budget %d tok, older=%d)\n",
+                hs.size(), budget, hasOlder ? 1 : 0);
         fflush(stdout);
     }
+
     Json::Value userMsg;
     userMsg["role"] = "user";
     userMsg["content"] = prompt;
@@ -88,11 +153,12 @@ void ChatHandler::handle(HttpContext& ctx) {
     std::string aiFull;
     LlmGateway::chatStream(openaiReq, ctx.resp, aiFull);
 
-    // ---- AI 回复落库 ----
+    // ---- AI 回复落库 + P1 滚动压缩触发 ----
     if (persist && !aiFull.empty()) {
-        ConversationService::appendMessage(convId, "ai", aiFull);
+        long long aiMsgId = ConversationService::appendMessage(convId, "ai", aiFull);
         tprintf("[ChatHandler] persisted AI reply (%zu bytes)\n", aiFull.size());
         fflush(stdout);
+        if (hasOlder && aiMsgId > 0) tryCompaction(convId, aiMsgId);
     }
     // Response 已由网关在退出时关闭, 无需再处理
 }

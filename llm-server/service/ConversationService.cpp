@@ -89,7 +89,7 @@ bool ConversationService::loadHistoryByTokens(long long convId, long long before
                                               int maxTokens, int fetchLimit,
                                               vector<MsgRow>& out, bool& outHasOlder) {
     outHasOlder = false;
-    if (maxTokens <= 0) return true;   // 无预算 => 不装历史 (由上层决定是否标 hasOlder)
+    if (maxTokens <= 0) { outHasOlder = true; return true; }   // 无预算且(很可能)有旧消息
     string before = beforeId > 0 ? " id < " + to_string(beforeId) : "1=1";
     string sql = "SELECT role, content FROM messages WHERE conv_id=" + to_string(convId) +
                  " AND " + before + " ORDER BY id DESC LIMIT " + to_string(fetchLimit);
@@ -117,6 +117,14 @@ bool ConversationService::getSummary(long long convId, string& out) {
     string sql = "SELECT summary FROM conversations WHERE id=" + to_string(convId);
     if (!Db::query(sql) || !Db::next()) return false;
     out = Db::value(0);
+    return true;
+}
+
+bool ConversationService::getSummaryEx(long long convId, string& out, long long& uptoMsgId) {
+    string sql = "SELECT summary, summary_upto FROM conversations WHERE id=" + to_string(convId);
+    if (!Db::query(sql) || !Db::next()) return false;
+    out = Db::value(0);
+    uptoMsgId = atoll(Db::value(1).c_str());
     return true;
 }
 
@@ -151,4 +159,26 @@ bool ConversationService::searchMessages(long long convId, const string& keyword
     std::reverse(rev.begin(), rev.end());   // 按时间正序返回
     out.insert(out.end(), rev.begin(), rev.end());
     return true;
+}
+
+bool ConversationService::loadOldestMessages(long long convId, int limit,
+                                             vector<MsgRow>& out, long long& outMaxId) {
+    string sql = "SELECT id, role, content FROM messages WHERE conv_id=" + to_string(convId) +
+                 " ORDER BY id ASC LIMIT " + to_string(limit);
+    if (!Db::query(sql)) return false;
+    outMaxId = 0;
+    while (Db::next()) {
+        MsgRow r;
+        outMaxId = atoll(Db::value(0).c_str());
+        r.role = Db::value(1);
+        r.content = Db::value(2);
+        out.push_back(r);
+    }
+    return true;
+}
+
+bool ConversationService::trimOldestMessages(long long convId, int limit) {
+    string sql = "DELETE FROM messages WHERE conv_id=" + to_string(convId) +
+                 " ORDER BY id ASC LIMIT " + to_string(limit);
+    return Db::update(sql);
 }

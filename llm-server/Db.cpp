@@ -5,6 +5,7 @@
 #include <mutex>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 
 // ---------------- 内部状态 ----------------
 static MYSQL*             g_conn    = nullptr;   // MySQL 连接(单连接, 互斥保护)
@@ -63,6 +64,8 @@ static bool createTables() {
             "title VARCHAR(120) NOT NULL DEFAULT '新对话',"
             "created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
             "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+            "summary TEXT,"
+            "summary_upto BIGINT UNSIGNED NOT NULL DEFAULT 0,"
             "INDEX(user_id)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS messages ("
@@ -84,6 +87,28 @@ static bool createTables() {
     return true;
 }
 
+// ---- 老库结构演进 (幂等补列) ----
+static bool hasColumn(const std::string& table, const std::string& col) {
+    std::string sql = "SELECT COUNT(*) FROM information_schema.columns "
+                      "WHERE table_schema = DATABASE() AND table_name='" + table +
+                      "' AND column_name='" + col + "'";
+    if (mysql_real_query(g_conn, sql.data(), (unsigned long)sql.size()) != 0) return false;
+    MYSQL_RES* r = mysql_store_result(g_conn);
+    if (!r) return false;
+    MYSQL_ROW row = mysql_fetch_row(r);
+    bool has = row && row[0] && atoi(row[0]) > 0;
+    mysql_free_result(r);
+    return has;
+}
+
+static bool ensureColumn(const std::string& table, const std::string& col, const std::string& ddl) {
+    if (hasColumn(table, col)) return true;
+    std::string sql = "ALTER TABLE " + table + " ADD " + ddl;
+    int rc = mysql_real_query(g_conn, sql.data(), (unsigned long)sql.size());
+    if (rc != 0) tprintf("[Db] ALTER %s.%s failed: %s\n", table.c_str(), col.c_str(), mysql_error(g_conn));
+    return rc == 0;
+}
+
 // ---------------- 对外接口 ----------------
 
 bool Db::init() {
@@ -101,6 +126,9 @@ bool Db::init() {
     g_db   = c.dbName;
     if (!doConnect()) return false;
     if (!createTables()) { freeResult(); mysql_close(g_conn); g_conn = nullptr; return false; }
+    // P1: 老库补摘要列 (幂等)
+    ensureColumn("conversations", "summary", "summary TEXT");
+    ensureColumn("conversations", "summary_upto", "summary_upto BIGINT UNSIGNED NOT NULL DEFAULT 0");
     return true;
 }
 

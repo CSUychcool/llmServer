@@ -46,6 +46,8 @@ public:
 
     // ---- 摘要 (P1) ----
     static bool getSummary(long long convId, std::string& out);
+    // 读摘要同时返回摘要覆盖到的最后一条消息 id (summary_upto)
+    static bool getSummaryEx(long long convId, std::string& out, long long& uptoMsgId);
     // 更新摘要同时记录"覆盖到的最后一条消息 id" (summary_upto)
     static bool setSummary(long long convId, const std::string& summary, long long uptoMsgId);
     // summary_upto 之后新增的消息条数 (afterId<=0 视为全量), 用于压缩触发节流
@@ -54,4 +56,11 @@ public:
     // ---- 历史召回 (P3): 关键词粗召回, 供窗口外旧消息入上下文 ----
     static bool searchMessages(long long convId, const std::string& keyword,
                                int limit, std::vector<MsgRow>& out);
+
+    // ---- 压缩素材 (P1) ----
+    // 取最早 limit 条消息 (ORDER BY id ASC), 空返回 true
+    static bool loadOldestMessages(long long convId, int limit, std::vector<MsgRow>& out,
+                                   long long& outMaxId);
+    // 删除最早 limit 条 (压缩入摘要后清理, 防止重复处理)
+    static bool trimOldestMessages(long long convId, int limit);
 };
