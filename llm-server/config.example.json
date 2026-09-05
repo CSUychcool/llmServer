@@ -4,7 +4,7 @@
     "upstream_path": "/v1/chat/completions",
     "model": "qwen2.5:7b-instruct-q4_K_M",
     "n_workers": 4,
-    "web_root": "/mnt/c/Users/yc_21/llm-chat",
+    "web_root": "/home/yc_21/server_ddz/web",
     "db": {
         "host": "127.0.0.1",
         "port": 3306,
