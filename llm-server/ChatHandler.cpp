@@ -8,6 +8,7 @@
 #include <json/json.h>
 #include <json/reader.h>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 // P1 滚动压缩: 当"预算装不下更旧消息"且"距上次压缩新增消息足够多"时,
@@ -53,6 +54,50 @@ static void tryCompaction(long long convId, long long lastMsgId) {
         ConversationService::trimOldestMessages(convId, (int)oldest.size());
         tprintf("[ChatHandler] compaction: %zu oldest msgs -> summary (%zu chars)\n",
                 oldest.size(), merged.size());
+        fflush(stdout);
+    }
+}
+
+// P3: 窗口外的更旧历史, 用提问关键词做粗召回并入上下文 (占用剩余预算, 最多 6 条)
+// 中文不做分词, 采用"按 ASCII 空白/标点切词取最长词; 无词可切时取句中部 16 字符"的近似
+static std::string extractKeyword(const std::string& s) {
+    std::string best, cur;
+    auto isSep = [](unsigned char ch) {
+        if (ch <= 32) return true;
+        return strchr(".,;:!?()[]{}\"'`<>/\\|-=_+*&^%$#@~", (char)ch) != nullptr;
+    };
+    for (size_t i = 0; i < s.size(); ++i) {
+        unsigned char ch = (unsigned char)s[i];
+        if (isSep(ch)) { if (cur.size() > best.size()) best = cur; cur.clear(); }
+        else cur.push_back((char)ch);
+    }
+    if (cur.size() > best.size()) best = cur;
+    if (best.size() < 2 && s.size() >= 8) {           // 中文长句无空格: 取中间一段
+        size_t mid = s.size() / 2;
+        best = s.substr(mid - 6, 12);
+    }
+    return best.size() >= 2 ? best : "";
+}
+
+static void joinKeyboardRecall(long long convId, const std::string& prompt,
+                               int& budget, Json::Value& messages) {
+    std::string kw = extractKeyword(prompt);
+    if (kw.empty()) return;
+    std::vector<MsgRow> hits;
+    ConversationService::searchMessages(convId, kw, 6, hits);
+    int added = 0;
+    for (const auto& h : hits) {
+        int tok = TokenCounter::estimateTokens(h.content) + 4;
+        if (budget - tok < 500) break;                // 至少留 500 token 余量给提问
+        budget -= tok;
+        Json::Value m;
+        m["role"] = h.role;
+        m["content"] = h.content;
+        messages.append(m);
+        added++;
+    }
+    if (added > 0) {
+        tprintf("[ChatHandler] P3 recall: +%d older msgs for kw='%.20s'\n", added, kw.c_str());
         fflush(stdout);
     }
 }
@@ -136,6 +181,8 @@ void ChatHandler::handle(HttpContext& ctx) {
         tprintf("[ChatHandler] db history loaded: %zu msgs (budget %d tok, older=%d)\n",
                 hs.size(), budget, hasOlder ? 1 : 0);
         fflush(stdout);
+        // P3: 预算仍有富余且窗口外还有更旧历史时, 用提问关键词召回
+        if (hasOlder && budget > 1000) joinKeyboardRecall(convId, prompt, budget, messages);
     }
 
     Json::Value userMsg;
