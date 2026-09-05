@@ -1,0 +1,15 @@
+{
+    "listen_port": 9000,
+    "upstream_url": "http://127.0.0.1:11434",
+    "upstream_path": "/v1/chat/completions",
+    "model": "qwen2.5:7b-instruct-q4_K_M",
+    "n_workers": 4,
+    "web_root": "/mnt/c/Users/yc_21/llm-chat",
+    "db": {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "user": "llm_chat",
+        "password": "",
+        "database": "llm_chat"
+    }
+}

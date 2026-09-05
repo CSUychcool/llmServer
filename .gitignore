@@ -1,0 +1,22 @@
+# ============================================================
+# 仓库白名单: 只发布 llm-server 及其编译依赖目录
+# 其余(游戏服/构建产物/本地配置/密钥)一律不进仓库
+# ============================================================
+/*
+!/.gitignore
+!/README.md
+
+!/llm-server/
+!/common/
+!/http/
+!/reactor/
+!/thread/
+!/crypto/
+
+# ---- llm-server 内部排除 -----
+/llm-server/build/
+/llm-server/.claude/
+/llm-server/logs/
+/llm-server/config.json
+/llm-server/config.ollama.json
+/llm-server/config.vllm.json
