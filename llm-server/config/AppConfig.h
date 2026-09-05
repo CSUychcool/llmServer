@@ -41,6 +41,14 @@ public:
     std::string startScript = "/home/yc_21/server_ddz/llm-server/start_model.sh";
     const std::vector<ModelEntry>& models() const { return m_models; }
 
+    // ---- 上下文管理 ----
+    int contextWindow = 32768;        // 模型窗口 (Ollama 需 OLLAMA_CONTEXT_LENGTH 同步)
+    int reserveOutputTokens = 6000;   // 预留给模型输出
+    int summaryMinNewMessages = 20;   // P1: 距上次摘要新增多少条消息才触发重新压缩
+    int historyFetchLimit = 500;      // 单次从 DB 拉取的历史上限件数(再按预算裁剪)
+    // 可行历史 token 预算 = 窗口 - 输出预留 (若被前端/系统提示覆盖则动态减少)
+    int usableHistoryTokens() const { return contextWindow - reserveOutputTokens; }
+
 private:
     void initDefaultModels();
     std::vector<ModelEntry> m_models;

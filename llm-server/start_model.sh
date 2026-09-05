@@ -92,8 +92,15 @@ ensure_ollama() {
             die "Ollama 里找不到模型 [$1]。请先: ollama pull $1"
         fi
         log "模型 [$1] 已存在"
+        # 提示: 上下文窗口需与服务端 TokenCounter 预算一致 (config context_window=32768)
+        curl_opts=(-s -m 3)
+        numctx=$(curl "${curl_opts[@]}" "http://127.0.0.1:$OLLAMA_PORT/api/show" -d "{\"model\":\"$1\"}" 2>/dev/null | grep -o '"num_ctx":[0-9]*' | head -1 | cut -d: -f2)
+        if [ -n "${numctx:-}" ] && [ "$numctx" -lt 32768 ]; then
+            log "⚠ Ollama 该模型 num_ctx=$numctx, 小于推荐 32768"
+            log "  建议停止 ollama 后用: OLLAMA_CONTEXT_LENGTH=32768 ollama serve"
+        fi
     else
-        die "Ollama 未运行。请先启动: ollama serve"
+        die "Ollama 未运行。请先启动: OLLAMA_CONTEXT_LENGTH=32768 ollama serve"
     fi
 }
 

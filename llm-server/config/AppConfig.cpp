@@ -47,6 +47,10 @@ bool AppConfig::load(const char* configFile) {
     c.upstreamPath = root.get("upstream_path", c.upstreamPath).asString();
     c.model = root.get("model", c.model).asString();
     c.webRoot = root.get("web_root", "").asString();
+    c.contextWindow = root.get("context_window", c.contextWindow).asInt();
+    c.reserveOutputTokens = root.get("reserve_output_tokens", c.reserveOutputTokens).asInt();
+    c.summaryMinNewMessages = root.get("summary_min_new_messages", c.summaryMinNewMessages).asInt();
+    c.historyFetchLimit = root.get("history_fetch_limit", c.historyFetchLimit).asInt();
 
     // db 段 (可选; 缺失则 hasDb=false, 鉴权/会话接口不可用)
     const Json::Value& db = root["db"];

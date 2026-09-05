@@ -9,6 +9,7 @@ struct ConvRow {
     std::string title;
     std::string createdAt;
     std::string updatedAt;
+    std::string summary;       // P1: 滚动压缩产生的历史摘要
 };
 
 // 消息行
@@ -36,7 +37,21 @@ public:
     // 追加一条消息并 touch 对话的 updated_at; 成功返回该行 id, 失败 -1
     static long long appendMessage(long long convId, const std::string& role,
                                    const std::string& content);
-    // 取某对话"某条消息之前"的最近 limit 条历史 (按 id 升序返回), 供模型上下文
-    static bool loadHistory(long long convId, long long beforeId, int limit,
-                            std::vector<MsgRow>& out);
+
+    // 上下文管理: 取 beforeId 之前的历史, 从最新往最旧装, 累计估算 token 不超过 maxTokens。
+    // outHasOlder: 是否存在"因预算装不下"而未被覆盖的旧消息 (P1 压缩 / P3 召回的触发依据)
+    static bool loadHistoryByTokens(long long convId, long long beforeId, int maxTokens,
+                                    int fetchLimit, std::vector<MsgRow>& out,
+                                    bool& outHasOlder);
+
+    // ---- 摘要 (P1) ----
+    static bool getSummary(long long convId, std::string& out);
+    // 更新摘要同时记录"覆盖到的最后一条消息 id" (summary_upto)
+    static bool setSummary(long long convId, const std::string& summary, long long uptoMsgId);
+    // summary_upto 之后新增的消息条数 (afterId<=0 视为全量), 用于压缩触发节流
+    static long long messagesSince(long long convId, long long uptoMsgId);
+
+    // ---- 历史召回 (P3): 关键词粗召回, 供窗口外旧消息入上下文 ----
+    static bool searchMessages(long long convId, const std::string& keyword,
+                               int limit, std::vector<MsgRow>& out);
 };

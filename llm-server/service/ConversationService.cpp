@@ -1,7 +1,9 @@
 #include "ConversationService.h"
 #include "Db.h"
+#include "TokenCounter.h"
 #include <cstdlib>
 #include <cstdio>
+#include <algorithm>
 #include <utility>
 
 using namespace std;
@@ -83,19 +85,70 @@ long long ConversationService::appendMessage(long long convId, const string& rol
     return id;
 }
 
-bool ConversationService::loadHistory(long long convId, long long beforeId, int limit,
-                                      vector<MsgRow>& out) {
-    string before = beforeId > 0 ? " id < " + to_string(beforeId) : "1=1";   // 1=1 避免 SQL 语法空
+bool ConversationService::loadHistoryByTokens(long long convId, long long beforeId,
+                                              int maxTokens, int fetchLimit,
+                                              vector<MsgRow>& out, bool& outHasOlder) {
+    outHasOlder = false;
+    if (maxTokens <= 0) return true;   // 无预算 => 不装历史 (由上层决定是否标 hasOlder)
+    string before = beforeId > 0 ? " id < " + to_string(beforeId) : "1=1";
     string sql = "SELECT role, content FROM messages WHERE conv_id=" + to_string(convId) +
-                 " AND " + before + " ORDER BY id DESC LIMIT " + to_string(limit);
-    vector<pair<string, string> > rev;   // 先倒序收集再倒回
+                 " AND " + before + " ORDER BY id DESC LIMIT " + to_string(fetchLimit);
     if (!Db::query(sql)) return false;
-    while (Db::next()) rev.push_back(make_pair(Db::value(0), Db::value(1)));
-    for (auto it = rev.rbegin(); it != rev.rend(); ++it) {
+
+    int used = 0;
+    int fetched = 0;
+    vector<MsgRow> collected;
+    while (Db::next()) {
+        fetched++;
         MsgRow r;
-        r.role = it->first;
-        r.content = it->second;
-        out.push_back(r);
+        r.role = Db::value(0);
+        r.content = Db::value(1);
+        int tokens = TokenCounter::estimateTokens(r.content) + 4;   // +role 与引号开销
+        if (used + tokens > maxTokens) { outHasOlder = true; break; }
+        used += tokens;
+        collected.push_back(r);
     }
+    if (fetched >= fetchLimit) outHasOlder = true;   // 上限拉满 => 可能还有更旧
+    for (auto it = collected.rbegin(); it != collected.rend(); ++it) out.push_back(*it);
+    return true;
+}
+
+bool ConversationService::getSummary(long long convId, string& out) {
+    string sql = "SELECT summary FROM conversations WHERE id=" + to_string(convId);
+    if (!Db::query(sql) || !Db::next()) return false;
+    out = Db::value(0);
+    return true;
+}
+
+bool ConversationService::setSummary(long long convId, const string& summary, long long uptoMsgId) {
+    string sql = "UPDATE conversations SET summary='" + Db::escape(summary) +
+                 "', summary_upto=" + to_string(uptoMsgId) +
+                 " WHERE id=" + to_string(convId);
+    return Db::update(sql);
+}
+
+long long ConversationService::messagesSince(long long convId, long long uptoMsgId) {
+    string sql = "SELECT COUNT(*) FROM messages WHERE conv_id=" + to_string(convId) +
+                 (uptoMsgId > 0 ? (" AND id > " + to_string(uptoMsgId)) : "");
+    if (!Db::query(sql) || !Db::next()) return 0;
+    return atoll(Db::value(0).c_str());
+}
+
+bool ConversationService::searchMessages(long long convId, const string& keyword,
+                                        int limit, vector<MsgRow>& out) {
+    if (keyword.empty()) return true;
+    string kw = Db::escape(keyword);
+    string sql = "SELECT role, content FROM messages WHERE conv_id=" + to_string(convId) +
+                 " AND content LIKE '%" + kw + "%' ORDER BY id DESC LIMIT " + to_string(limit);
+    if (!Db::query(sql)) return false;
+    vector<MsgRow> rev;
+    while (Db::next()) {
+        MsgRow r;
+        r.role = Db::value(0);
+        r.content = Db::value(1);
+        rev.push_back(r);
+    }
+    std::reverse(rev.begin(), rev.end());   // 按时间正序返回
+    out.insert(out.end(), rev.begin(), rev.end());
     return true;
 }

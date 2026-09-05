@@ -58,6 +58,7 @@ set(LLM_SRCS
     service/ConversationService.cpp
     service/LlmGateway.cpp
     service/ModelService.cpp
+    service/TokenCounter.cpp
     http_common/Response.cpp
 )
 

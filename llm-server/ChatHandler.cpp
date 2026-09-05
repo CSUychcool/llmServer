@@ -3,6 +3,7 @@
 #include "net/HttpContext.h"
 #include "service/ConversationService.h"
 #include "service/LlmGateway.h"
+#include "service/TokenCounter.h"
 #include "config/AppConfig.h"
 #include <json/json.h>
 #include <json/reader.h>
@@ -54,16 +55,22 @@ void ChatHandler::handle(HttpContext& ctx) {
     if (hist.isArray() && hist.size() > 0) {
         for (Json::ArrayIndex i = 0; i < hist.size(); ++i) messages.append(hist[i]);
     } else if (persist) {
+        // 预算分配: 窗口 - 输出预留 - 系统提示 - 本次提问 = 可装历史
+        int budget = AppConfig::get().usableHistoryTokens()
+                     - TokenCounter::estimateTokens(systemPrompt)
+                     - TokenCounter::estimateTokens(prompt);
         std::vector<MsgRow> hs;
-        ConversationService::loadHistory(convId,
-            userMsgId.empty() ? 0 : atoll(userMsgId.c_str()), 20, hs);
+        bool hasOlder = false;
+        ConversationService::loadHistoryByTokens(convId,
+            userMsgId.empty() ? 0 : atoll(userMsgId.c_str()),
+            budget, AppConfig::get().historyFetchLimit, hs, hasOlder);
         for (const auto& h : hs) {
             Json::Value m;
             m["role"] = h.role;
             m["content"] = h.content;
             messages.append(m);
         }
-        tprintf("[ChatHandler] db history loaded: %zu\n", hs.size());
+        tprintf("[ChatHandler] db history loaded: %zu msgs (budget %d tok)\n", hs.size(), budget);
         fflush(stdout);
     }
     Json::Value userMsg;
