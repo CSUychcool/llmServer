@@ -87,6 +87,24 @@ void ConvHandler::handle(HttpContext& ctx) {
         return;
     }
 
+    // ---- 清空上下文 (POST /api/convs/clear) {id} ----
+    if (ctx.method == "POST" && ctx.url == "/api/convs/clear") {
+        Json::Value req;
+        Json::Reader reader;
+        if (!reader.parse(string(ctx.body ? ctx.body : "", ctx.bodyLen), req)) {
+            ctx.resp.sendErr("参数格式错误"); return;
+        }
+        long long id = atoll(req.get("id", "0").asString().c_str());
+        if (id <= 0) { ctx.resp.sendErr("参数格式错误"); return; }
+        if (!ConversationService::clearContext(uid, id)) {
+            ctx.resp.sendErr("对话不存在或无权访问"); return;
+        }
+        Json::Value resp;
+        resp["code"] = 0;
+        ctx.resp.sendJson(200, "OK", resp);
+        return;
+    }
+
     // ---- 消息列表 (POST /api/convs/messages) {conv_id} ----
     if (ctx.method == "POST" && ctx.url == "/api/convs/messages") {
         Json::Value req;

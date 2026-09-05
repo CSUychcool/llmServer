@@ -61,6 +61,14 @@ bool ConversationService::ownsConversation(long long uid, long long convId) {
     return Db::query(sql) && Db::next();
 }
 
+bool ConversationService::clearContext(long long uid, long long convId) {
+    if (!ownsConversation(uid, convId)) return false;
+    Db::update("DELETE FROM messages WHERE conv_id=" + to_string(convId));
+    Db::update("UPDATE conversations SET summary=NULL, summary_upto=0 "
+               "WHERE id=" + to_string(convId) + " AND user_id=" + to_string(uid));
+    return true;
+}
+
 bool ConversationService::loadMessages(long long uid, long long convId, vector<MsgRow>& out) {
     if (!ownsConversation(uid, convId)) return false;
     string sql = "SELECT role, content, created_at FROM messages "

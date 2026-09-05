@@ -15,6 +15,8 @@ Json::Value ModelService::status() {
     resp["model"] = c.model;
     resp["upstream_url"] = "http://" + c.upstreamHost + ":" + std::to_string(c.upstreamPort);
     resp["upstream_path"] = c.upstreamPath;
+    resp["context_window"] = c.contextWindow;
+    resp["reserve_output_tokens"] = c.reserveOutputTokens;
     return resp;
 }
 

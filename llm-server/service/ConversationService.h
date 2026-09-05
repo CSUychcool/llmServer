@@ -29,6 +29,8 @@ public:
     static bool create(long long uid, const std::string& title, ConvRow& out);
     static bool rename(long long uid, long long convId, const std::string& title);
     static bool remove(long long uid, long long convId);                 // 级联删消息
+    // P2: 清空对话上下文 (删 messages + 重置摘要), 保留会话壳/标题
+    static bool clearContext(long long uid, long long convId);
     static bool ownsConversation(long long uid, long long convId);
 
     // ---- 消息 ----
