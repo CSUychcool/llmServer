@@ -12,11 +12,17 @@ add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=1)
 
 # 相对路径: 仓库根下 llm-server 与 common/http/reactor/thread/crypto 同级,
 # 克隆后在本机直接 cmake 即编译, 不再依赖机器上的绝对路径
-include_directories(${CMAKE_SOURCE_DIR}/../common
+include_directories(${CMAKE_SOURCE_DIR}
+                    ${CMAKE_SOURCE_DIR}/net
+                    ${CMAKE_SOURCE_DIR}/http_common
+                    ${CMAKE_SOURCE_DIR}/../common
                     ${CMAKE_SOURCE_DIR}/../http
                     ${CMAKE_SOURCE_DIR}/../reactor
                     ${CMAKE_SOURCE_DIR}/../thread
                     ${CMAKE_SOURCE_DIR}/../crypto
+                    ${CMAKE_SOURCE_DIR}/config
+                    ${CMAKE_SOURCE_DIR}/route
+                    ${CMAKE_SOURCE_DIR}/service
                     /usr/include/mysql
                     /usr/include/jsoncpp)
 
@@ -24,7 +30,6 @@ include_directories(${CMAKE_SOURCE_DIR}/../common
 set(INFRA_SRCS
     ${CMAKE_SOURCE_DIR}/../common/Buffer.cpp
     ${CMAKE_SOURCE_DIR}/../common/Channel.cpp
-    ${CMAKE_SOURCE_DIR}/../common/JsonParse.cpp
     ${CMAKE_SOURCE_DIR}/../reactor/Dispatcher.cpp
     ${CMAKE_SOURCE_DIR}/../reactor/EpollDispatcher.cpp
     ${CMAKE_SOURCE_DIR}/../reactor/EventLoop.cpp
@@ -39,14 +44,21 @@ set(INFRA_SRCS
 
 set(LLM_SRCS
     main.cpp
-    LlmServer.cpp
-    LlmConnection.cpp
-    TaskPool.cpp
+    net/HttpServer.cpp
+    net/HttpConnection.cpp
+    net/TaskPool.cpp
     ChatHandler.cpp
     ControlHandler.cpp
     Db.cpp
     AuthHandler.cpp
     ConvHandler.cpp
+    route/Router.cpp
+    config/AppConfig.cpp
+    service/AuthService.cpp
+    service/ConversationService.cpp
+    service/LlmGateway.cpp
+    service/ModelService.cpp
+    http_common/Response.cpp
 )
 
 add_executable(llm-server ${INFRA_SRCS} ${LLM_SRCS})

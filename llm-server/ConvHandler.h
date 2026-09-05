@@ -1,11 +1,9 @@
 #pragma once
 
-#include <string>
+struct HttpContext;
 
-// /api/convs 相关路由: 对话列表/新建/改名/删除 + 消息查询
+// /api/convs* HTTP 层: 解析请求 -> 调 ConversationService -> 组装 JSON
 class ConvHandler {
 public:
-    // url 形如 /api/convs、/api/convs/rename 等; token 已去除 "Bearer " 前缀
-    static void handle(int wfd, const std::string& method, const std::string& url,
-                       const std::string& token, const char* body, size_t bodyLen);
+    static void handle(HttpContext& ctx);
 };

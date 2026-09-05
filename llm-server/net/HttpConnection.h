@@ -5,14 +5,13 @@
 #include "Channel.h"
 #include "HttpRequest.h"
 #include "TaskPool.h"
-#include "ChatHandler.h"
 #include <string>
 #include <functional>
 
-class LlmConnection {
+class HttpConnection {
 public:
-    LlmConnection(int fd, EventLoop* evloop, TaskPool* pool);
-    ~LlmConnection();
+    HttpConnection(int fd, EventLoop* evloop, TaskPool* pool);
+    ~HttpConnection();
 
 private:
     static int processRead(void* arg);

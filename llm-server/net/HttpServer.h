@@ -7,12 +7,12 @@
 #include <string>
 #include <vector>
 
-class LlmConnection;
+class HttpConnection;
 
-class LlmServer {
+class HttpServer {
 public:
-    LlmServer(unsigned short port, int threadNum);
-    ~LlmServer();
+    HttpServer(unsigned short port, int threadNum);
+    ~HttpServer();
     void run();
 
 private:

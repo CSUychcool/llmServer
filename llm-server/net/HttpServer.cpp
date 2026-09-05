@@ -1,5 +1,5 @@
-#include "LlmServer.h"
-#include "LlmConnection.h"
+#include "HttpServer.h"
+#include "HttpConnection.h"
 #include "Channel.h"
 #include "Log.h"
 #include <sys/types.h>
@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <cstdio>
 
-LlmServer::LlmServer(unsigned short port, int threadNum)
+HttpServer::HttpServer(unsigned short port, int threadNum)
     : m_port(port), m_threadNum(threadNum)
 {
     m_mainLoop = new EventLoop("MainLoop");
@@ -22,14 +22,14 @@ LlmServer::LlmServer(unsigned short port, int threadNum)
     m_workerPool->run();
 }
 
-LlmServer::~LlmServer() {
+HttpServer::~HttpServer() {
     close(m_lfd);
     delete m_workerPool;
     delete m_pool;
     delete m_mainLoop;
 }
 
-void LlmServer::run() {
+void HttpServer::run() {
     /* TCP listen */
     m_lfd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (m_lfd < 0) exit(1);
@@ -43,10 +43,10 @@ void LlmServer::run() {
     addr.sin_addr.s_addr = INADDR_ANY;
 
     if (::bind(m_lfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("[LlmServer] bind failed"); exit(1);
+        perror("[HttpServer] bind failed"); exit(1);
     }
     if (listen(m_lfd, 512) < 0) {
-        perror("[LlmServer] listen failed"); exit(1);
+        perror("[HttpServer] listen failed"); exit(1);
     }
 
     /* Register listening fd's ReadEvent → acceptConnection */
@@ -54,14 +54,14 @@ void LlmServer::run() {
                                    acceptConnection, nullptr, nullptr, this);
     m_mainLoop->addTask(channel, ElemType::ADD);
 
-    tprintf("[LlmServer] Listening on port %d\n", m_port);
+    tprintf("[HttpServer] Listening on port %d\n", m_port);
     fflush(stdout);
 
     m_mainLoop->run();
 }
 
-int LlmServer::acceptConnection(void* arg) {
-    LlmServer* server = static_cast<LlmServer*>(arg);
+int HttpServer::acceptConnection(void* arg) {
+    HttpServer* server = static_cast<HttpServer*>(arg);
     int cfd = ::accept(server->m_lfd, NULL, NULL);
     if (cfd < 0) return -1;
 
@@ -74,11 +74,11 @@ int LlmServer::acceptConnection(void* arg) {
 
     // Round-Robin select a worker loop
     EventLoop* evLoop = server->m_workerPool->takeWorkerEventLoop();
-    tprintf("[LlmServer] accept cfd=%d from %s:%d -> %s (t%lu)\n",
+    tprintf("[HttpServer] accept cfd=%d from %s:%d -> %s (t%lu)\n",
            cfd, ip, ntohs(caddr.sin_port), evLoop->getThreadName().c_str(),
            (unsigned long)hash<std::thread::id>{}(evLoop->getThreadID()) % 10000);
     fflush(stdout);
 
-    new LlmConnection(cfd, evLoop, server->m_pool);
+    new HttpConnection(cfd, evLoop, server->m_pool);
     return 0;
 }

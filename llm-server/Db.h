@@ -8,8 +8,8 @@
 // - SQL 值必须经 escape() 转义防注入
 class Db {
 public:
-    // 解析 config 的 "db" 段 (host/port/user/password/database) 并连接 + 自动建表(幂等)
-    static bool initFromConfig(const char* configFile);
+    // 从 AppConfig 读取 db 配置并连接 + 自动建表(幂等)。要求先调用 AppConfig::load()
+    static bool init();
     static bool isReady();
 
     // 对字符串做 SQL 转义 (返回可安全放进单引号字面量的内容)

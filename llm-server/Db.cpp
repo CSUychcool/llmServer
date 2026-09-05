@@ -1,10 +1,7 @@
 #include "Db.h"
 #include "Log.h"
-#include <json/json.h>
-#include <json/value.h>
-#include <json/reader.h>
+#include "config/AppConfig.h"
 #include <mysql.h>
-#include <fstream>
 #include <mutex>
 #include <cstdio>
 #include <cstring>
@@ -89,27 +86,19 @@ static bool createTables() {
 
 // ---------------- 对外接口 ----------------
 
-bool Db::initFromConfig(const char* configFile) {
+bool Db::init() {
     std::lock_guard<std::mutex> lock(g_mutex);
-    std::ifstream f(configFile);
-    Json::Value root;
-    Json::Reader reader;
-    if (!f.is_open() || !reader.parse(f, root)) {
-        tprintf("[Db] cannot read config: %s\n", configFile ? configFile : "(null)");
+    const AppConfig& c = AppConfig::get();
+    if (!c.hasDb) {
+        tprintf("[Db] no 'db' section in AppConfig, DB disabled\n");
         fflush(stdout);
         return false;
     }
-    const Json::Value& db = root["db"];
-    if (!db.isObject()) {
-        tprintf("[Db] no 'db' section in %s\n", configFile ? configFile : "(null)");
-        fflush(stdout);
-        return false;
-    }
-    g_host = db.get("host", "127.0.0.1").asString();
-    g_port = (unsigned short)db.get("port", 3306).asInt();
-    g_user = db.get("user", "llm_chat").asString();
-    g_pass = db.get("password", "").asString();
-    g_db   = db.get("database", "llm_chat").asString();
+    g_host = c.dbHost;
+    g_port = (unsigned short)c.dbPort;
+    g_user = c.dbUser;
+    g_pass = c.dbPassword;
+    g_db   = c.dbName;
     if (!doConnect()) return false;
     if (!createTables()) { freeResult(); mysql_close(g_conn); g_conn = nullptr; return false; }
     return true;
