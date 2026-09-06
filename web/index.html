@@ -1081,8 +1081,15 @@ function appendStream(){
   w.appendChild(r); scrollBot(); return r;
 }
 
+// 流式期间代码围栏可能尚未闭合: 临时补一个闭合围栏, 让代码提前成块(限宽 pre),
+// 避免未闭合代码被当普通段落横向撑满; finishStream 会用完整文本重渲染
+function balanceFences(t){
+  const n=(t.match(/```/g)||[]).length;
+  return n%2 ? t+'\n```' : t;
+}
+
 function updStream(el,text){
-  el.innerHTML=renderMD(text);
+  el.innerHTML=renderMD(balanceFences(text));
   // Add copy buttons
   el.querySelectorAll('.code-block').forEach(b=>{
     const h=b.querySelector('.code-head');
@@ -1115,7 +1122,7 @@ function renderMD(text){
   let h=escH(text);
   h=h.replace(/```(\w*)\n([\s\S]*?)```/g,(_,lang,code)=>{
     const l=lang||'text';
-    return `<div class="code-block"><div class="code-head"><span>${escT(l)}</span><button class="copy-code" onclick="copyCode(this)">复制</button></div><div class="code-body">${escH(code)}<br/></div></div>`;
+    return `<div class="code-block"><div class="code-head"><span>${escT(l)}</span><button class="copy-code" onclick="copyCode(this)">复制</button></div><div class="code-body">${code}<br/></div></div>`;
   });
   h=h.replace(/`([^`]+)`/g,'<span class="inline-code">$1</span>');
   h=h.replace(/^### (.+)$/gm,'<h3>$1</h3>').replace(/^## (.+)$/gm,'<h2>$1</h2>').replace(/^# (.+)$/gm,'<h1>$1</h1>');
